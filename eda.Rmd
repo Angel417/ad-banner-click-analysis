@@ -1,0 +1,238 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+EDA
+
+```{r}
+# Install packages
+install.packages("apaTables")
+install.packages("vtable")
+
+# Load in libraries
+library(tidyverse)
+library(ggplot2)
+library(lubridate)
+library(skimr)
+library(psych)
+library(Hmisc)
+library(corrplot)
+library(naniar)
+library(GGally)
+library(janitor)
+library(apaTables)
+library(modelsummary)
+library(vtable)
+library(formattable)
+library(stargazer)
+
+# Load in data
+ad_data <- read_csv("advertising_clicks.csv")
+
+```
+
+BASIC DESCRIPTIVES
+```{r}
+# Summary stats
+ad_data %>%
+  gg_miss_var()
+
+ad_data %>%
+  select(time_on_site, age, area_income, daily_internet_usage) %>%
+  psych::describe()
+
+# Mean, median, sd, min, max
+ad_data %>%
+  select(time_on_site, age, area_income, daily_internet_usage) %>%
+  summarise_all(mean) -> stats
+
+ad_data %>%
+  select(time_on_site, age, area_income, daily_internet_usage) %>%
+  summarise_all(median) -> stats2
+
+ad_data %>%
+  select(time_on_site, age, area_income, daily_internet_usage) %>%
+  summarise_all(sd) -> stats3
+
+ad_data %>%
+  select(time_on_site, age, area_income, daily_internet_usage) %>%
+  summarise_all(min) -> stats4
+
+ad_data %>%
+  select(time_on_site, age, area_income, daily_internet_usage) %>%
+  summarise_all(max) -> stats5
+
+bind_rows(stats, stats2, stats3, stats4, stats5) -> stats_table
+
+# Reformat table
+rownames(stats_table) <- c("Mean",
+                           "Median",
+                           "SD",
+                           "Min",
+                           "Max")
+
+colnames(stats_table) <- c("Time Spent on Website (Mins)",
+                           "Age",
+                           "Average Area Income",
+                           "Daily Internet Usage (Mins)")
+
+stats_table %>% relocate(`Daily Internet Usage (Mins)`, .before = Age) -> stats_table
+
+formattable(stats_table)
+
+```
+
+
+DISTRIBUTIONS & FREQUENCIES
+```{r}
+# gender
+ad_data %>% 
+  tabyl(gender) %>%
+  adorn_pct_formatting(digits = 2) %>%
+  adorn_totals()
+
+# age
+ad_data %>%
+  ggplot() + geom_boxplot(aes(age)) +
+  theme_minimal()
+
+ad_data %>%
+  ggplot() + geom_histogram(aes(age), bins = 25) +
+  theme_minimal()
+
+#time_on_site
+ad_data %>%
+  ggplot() + geom_boxplot(aes(time_on_site)) +
+  theme_minimal()
+
+ad_data %>%
+  ggplot() + geom_histogram(aes(time_on_site), bins = 25) +
+  theme_minimal()
+
+
+# daily_internet_usage
+ad_data %>%
+  ggplot() + geom_boxplot(aes(daily_internet_usage)) +
+  theme_minimal()
+
+ad_data %>%
+  ggplot() + geom_histogram(aes(daily_internet_usage), bins = 25) +
+  theme_minimal()
+
+# area_income
+ad_data %>%
+  ggplot() + geom_boxplot(aes(area_income)) +
+  theme_minimal()
+
+ad_data %>%
+  ggplot() + geom_histogram(aes(area_income), bins = 25) +
+  theme_minimal()
+
+```
+
+NEW VARIABLE CREATIONS & TRANSFORMATIONS
+```{r}
+# gender
+ad_data %>% mutate(
+  gender_category = ifelse(gender == 1, "Male", "Female")
+) -> ad_data
+
+# daily_internet_usage, time_on_site - square root
+ad_data %>% mutate(
+  internet_sqrt = sqrt(daily_internet_usage),
+  website_sqrt = sqrt(time_on_site)
+) -> ad_data
+
+# area_income, age - log transform
+ad_data %>% mutate(
+  #income_sqrd = (area_income / 1000) ^ 2,
+  age_log = log(age)
+) -> ad_data
+
+```
+
+
+INDEPENDENT SAMPLE T-TESTS FOR ALL IVs
+```{r}
+# website_sqrt
+t.test (website_sqrt ~ clicked, var.equal = TRUE, data = ad_data)
+
+# internet_sqrt
+t.test (internet_sqrt ~ clicked, var.equal = TRUE, data = ad_data)
+
+# age_log
+t.test (age_log ~ clicked, var.equal = TRUE, data = ad_data)
+
+# income_sqrd
+t.test (income_sqrd ~ clicked, var.equal = TRUE, data = ad_data)
+```
+
+BAR CHARTS - IV DISTRIBUTIONS FOR DV CATEOGORIES (ACROSS 1/0)
+```{r}
+# website_sqrt, internet_sqrt
+ad_data %>%
+  select(
+    time_on_site,
+    daily_internet_usage,
+    clicked) %>%
+  group_by(clicked) %>%
+  summarise_all(mean, na.rm = T) %>%
+  pivot_longer(-clicked, names_to = "Usage", values_to = "volume") %>%
+  ggplot(aes(x = Usage, y = volume, fill = Usage)) + geom_bar(stat = "identity") +
+  facet_wrap(clicked~.) + theme_light(base_size = 20) +
+  scale_fill_manual(values = c("#414141", "#bbbbbb")) +
+  labs(
+    x = "Type of Usage",
+    y = "Average Minutes")
+
+
+# age mean values
+ad_data %>%
+  select(
+    age,
+    clicked) %>%
+  group_by(clicked) %>%
+  summarise_all(mean, na.rm = T) %>%
+  pivot_longer(-clicked, names_to = "Age", values_to = "volume") %>%
+  ggplot(aes(x = Age, y = volume)) + geom_bar(stat = "identity", fill = "#414141") +
+  facet_wrap(clicked~.) + theme_light(base_size = 20) +
+  theme(axis.text.x = element_blank()) +
+  labs(
+    x = "",
+    y = "Average Age")
+
+
+# income mean values
+ad_data %>%
+  select(
+    area_income,
+    clicked) %>%
+  group_by(clicked) %>%
+  summarise_all(mean, na.rm = T) %>%
+  pivot_longer(-clicked, names_to = "Income", values_to = "volume") %>%
+  ggplot(aes(x = Income, y = volume)) + geom_bar(stat = "identity", fill = "#414141") +
+  facet_wrap(clicked~.) + theme_light(base_size = 20) +
+  theme(axis.text.x = element_blank()) +
+  labs(
+    x = "",
+    y = "Average Income per Area")
+
+```
+
+BOX PLOTS - IV DISTRIBUTIONS FOR DV CATEGORIES (1/0)
+```{r}
+# website_sqrt
+boxplot(ad_data$clicked, ad_data$website_sqrt)
+
+# internet_sqrt
+boxplot(ad_data$clicked, ad_data$internet_sqrt)
+
+# age_log
+boxplot(ad_data$age_log, ad_data$age_log)
+
+# income_sqrd
+boxplot(ad_data$income_sqrd, ad_data$income_sqrd)
+```
+
+
