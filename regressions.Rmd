@@ -1,0 +1,187 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+REGRESSIONS
+
+
+```{r}
+# Install packages
+install.packages("visreg")
+install.packages("lmtest")
+install.packages("ResourceSelection")
+install.packages("stargazer")
+
+# Load in libraries
+library(tidyverse)
+library(ggplot2)
+library(lubridate)
+library(skimr)
+library(psych)
+library(Hmisc)
+library(corrplot)
+library(naniar)
+library(GGally)
+library(janitor)
+library(modelsummary)
+library(jtools)
+library(visreg)
+library(lmtest)
+library(ResourceSelection)
+library(car)
+library(stargazer)
+library(sjPlot)
+library(sjmisc)
+library(sjlabelled)
+
+```
+
+
+CHOSEN MODEL
+```{r}
+ad_data %>%
+  glm(clicked ~ sqrt(time_on_site) + sqrt(daily_internet_usage) + area_income + log(age),
+      family = binomial(link = "logit"),
+     data = .) %>%
+  summ(digits = 3)
+
+
+
+# INTERPRETATION:
+# A percentage increase in AGE leads to a factor of (465.448 / 100) = 4.654
+## In the case of odds being 1, increases to 1 * 4.654 = 4.654
+## The probability (clicked=1) increases from 0.5 to 0.823
+
+
+# Control - area income: no effect on increasing/decreasing odds of clicking
+
+
+# When the visitor's GENDER is male, the odds for clicked (y=1) are DECREASED by a factor of 1.464,
+## The odds of 1 decreases to 1 * -1.464 = -1.464
+## The probability (clicked=1) decreases from 0.5 to 0.317
+```
+
+REGRESSION OUTPUT TABLES
+```{r}
+# Model 1 - with all variables
+model1 <- glm(clicked ~ sqrt(time_on_site) + sqrt(daily_internet_usage) + area_income + log(age) + gender_category,
+             family = binomial(link = "logit"), data = ad_data)
+stargazer(model1, type = "html", out = "model1.html")
+
+
+# Model 2 - all variables EXCEPT gender (chosen)
+model2 <- glm(clicked ~ sqrt(time_on_site) + sqrt(daily_internet_usage) + area_income + log(age),
+             family = binomial(link = "logit"), data = ad_data)
+stargazer(model2, type = "html", out = "model2.html")
+
+
+stargazer(model1, model2, title="Regression Results - Model 1(L) and Model 2(R)", align=TRUE,
+          column.sep.width = "45pt", type = "text", out = "modelnew.html")
+
+```
+
+
+VISUALIZING REGRESSION EFFECTS - CHOSEN MODEL
+```{r}
+# Time on website
+visreg(model2, "time_on_site")
+
+# Internet usage
+visreg(model2, "daily_internet_usage")
+
+# Age
+visreg(model2, "age", scale = "response")
+
+# Gender
+visreg(model1, "gender_category", scale = "response")
+
+```
+
+OUTLIER ANALYSIS
+```{r}
+# Model 2 (chosen)
+ad_data$prob <- predict(model2, type = "response")
+resid <- ad_data$clicked - ad_data$prob
+z_resid <- resid / sqrt(ad_data$prob * (1 - ad_data$prob))
+plot(z_resid)
+
+```
+
+LIKELIHOOD RATIO TEST
+```{r}
+# Model 2 (chosen)
+model_restrict <- glm(formula = clicked ~ 1, family = binomial(link = "logit"), data = ad_data)
+lrtest(model_restrict, model2)
+```
+
+HIT RATE
+```{r}
+# Model 2 (chosen)
+## Probabilities
+ad_data$prob_hit <- predict(model2, type = "response")
+
+# Predicted values
+ad_data$pred <- ifelse(ad_data$prob_hit >= 0.5, 1, 0)
+
+# Fraction of correct predictions
+## Model predicts 96.7% of the time the correct 1 or 0 (true positives & true negatives)
+mean(ad_data$clicked, ad_data$pred)
+
+# Table of hit rate
+table(ad_data$clicked, ad_data$pred)
+
+```
+
+PRESS-Q: SIGNIFICANT GOOD
+```{r}
+# Model 2 (chosen)
+chi2result <- chisq.test(ad_data$clicked, ad_data$pred, correct = F)
+chi2result
+
+```
+
+HOSMER-LEMESHOW: INSIGNIFICANT GOOD
+```{r}
+# Model 2 (chosen)
+hlresult <- hoslem.test(model2$y, model2$fitted.values, g = 11)
+hlresult
+```
+
+ASSUMPTIONS TESTING
+```{r}
+# multicollinear
+vif(model2)
+```
+
+ROBUSTNESS
+```{r}
+# Checking for alternative models
+
+## Alternative model 1
+ad_data %>%
+  glm(clicked ~ time_on_site + daily_internet_usage + area_income + log(age) + gender_category,
+      family = binomial(link = "logit"),
+     data = .) %>%
+  summ(digits = 3)
+# Even though R-squared is the same, effects of alternative model 1 are weaker in magnitude, even though direction of effects
+# is same (negative for internet, web usage), supporting the negative effects that we found
+
+
+## Alternative model 2
+ad_data %>%
+  glm(clicked ~ time_on_site + daily_internet_usage + area_income + age + gender_category,
+      family = binomial(link = "logit"),
+     data = .) %>%
+  summ(digits = 3)
+# R-squared went down, effects of alternative model 2 are much weaker in magnitude, even though direction of effects
+# is same (negative for internet, web usage), supporting the negative effects that we found
+# The effect of age is much weaker, even though it was also a positive effect
+
+
+ad_data %>%
+  glm(clicked ~ time_on_site + daily_internet_usage + area_income + age,
+      family = binomial(link = "logit"),
+     data = .) %>%
+  summ(digits = 3)
+```
